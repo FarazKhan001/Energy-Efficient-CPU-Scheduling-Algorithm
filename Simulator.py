@@ -1,52 +1,82 @@
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 import matplotlib.pyplot as plt
+import numpy as np
 
 class CPUScheduler:
     def __init__(self, root):
         self.root = root
         self.root.title("CPU Scheduling Simulator")
         self.root.configure(bg="#2c3e50")
-
+        
         tk.Label(root, text="CPU Scheduling Simulator", font=("Arial", 16, "bold"), fg="white", bg="#2c3e50").pack(pady=10)
-
-        tk.Label(root, text="Enter Process Burst Times (Space-Separated):", fg="white", bg="#2c3e50").pack()
-        self.burst_entry = tk.Entry(root, width=50)
-        self.burst_entry.pack()
-
-        self.priority_label = tk.Label(root, text="Enter Process Priorities (Lower = Higher Priority, Space-Separated):", fg="white", bg="#2c3e50")
-        self.priority_label.pack()
-        self.priority_entry = tk.Entry(root, width=50)
-        self.priority_entry.pack()
-
-        self.quantum_label = tk.Label(root, text="Enter Time Quantum (Only for Round Robin):", fg="white", bg="#2c3e50")
-        self.quantum_label.pack()
-        self.quantum_entry = tk.Entry(root, width=50)
-        self.quantum_entry.pack()
-
+        
+        tk.Label(root, text="Enter Number of Processes:", fg="white", bg="#2c3e50").pack()
+        self.process_count_entry = tk.Entry(root, width=10)
+        self.process_count_entry.pack()
+        tk.Button(root, text="Set Processes", command=self.create_process_entries, bg="#3498db", fg="white").pack(pady=5)
+        
+        self.process_frame = tk.Frame(root, bg="#2c3e50")
+        self.process_frame.pack()
+        
         tk.Label(root, text="Choose Scheduling Algorithm:", fg="white", bg="#2c3e50").pack()
-
         self.algorithm = tk.StringVar()
         self.algorithm.set("FCFS")
-
+        
         algorithms = ["FCFS", "SJF", "Priority", "Round Robin"]
         for algo in algorithms:
             tk.Radiobutton(root, text=algo, variable=self.algorithm, value=algo, bg="#2c3e50", fg="white", command=self.toggle_fields).pack()
+        
+        self.quantum_label = tk.Label(root, text="Enter Time Quantum (Only for Round Robin):", fg="white", bg="#2c3e50")
+        self.quantum_entry = tk.Entry(root, width=10)
+        
+        tk.Button(root, text="Run Simulation", command=self.run_simulation, bg="#27ae60", fg="white", font=("Arial", 12)).pack(pady=5)
+        
+        self.result_frame = tk.Frame(root, bg="#2c3e50")
+        self.result_frame.pack()
 
-        tk.Button(root, text="Run Simulation", command=self.run_simulation, bg="#3498db", fg="white", font=("Arial", 12)).pack(pady=5)
+    def create_process_entries(self):
+        for widget in self.process_frame.winfo_children():
+            widget.destroy()
 
-        self.output_text = tk.Text(root, width=60, height=10, bg="#ecf0f1")
-        self.output_text.pack(pady=5)
-
-        self.toggle_fields()
+        try:
+            self.num_processes = int(self.process_count_entry.get())
+            if self.num_processes <= 0:
+                raise ValueError("Number of processes must be positive.")
+            
+            tk.Label(self.process_frame, text="Arrival Time", fg="white", bg="#2c3e50").grid(row=0, column=1, padx=10)
+            tk.Label(self.process_frame, text="Burst Time", fg="white", bg="#2c3e50").grid(row=0, column=2, padx=10)
+            tk.Label(self.process_frame, text="Priority", fg="white", bg="#2c3e50").grid(row=0, column=3, padx=10)
+            
+            self.arrival_entries = []
+            self.burst_entries = []
+            self.priority_entries = []
+            
+            for i in range(self.num_processes):
+                tk.Label(self.process_frame, text=f"P{i+1}", fg="white", bg="#2c3e50").grid(row=i+1, column=0)
+                at_entry = tk.Entry(self.process_frame, width=10)
+                bt_entry = tk.Entry(self.process_frame, width=10)
+                pr_entry = tk.Entry(self.process_frame, width=10)
+                
+                at_entry.grid(row=i+1, column=1, padx=10)
+                bt_entry.grid(row=i+1, column=2, padx=10)
+                pr_entry.grid(row=i+1, column=3, padx=10)
+                
+                self.arrival_entries.append(at_entry)
+                self.burst_entries.append(bt_entry)
+                self.priority_entries.append(pr_entry)
+            
+            self.toggle_fields()
+        except ValueError as e:
+            messagebox.showerror("Error", str(e))
 
     def toggle_fields(self):
         if self.algorithm.get() == "Priority":
-            self.priority_label.pack()
-            self.priority_entry.pack()
+            for entry in self.priority_entries:
+                entry.config(state="normal")
         else:
-            self.priority_label.pack_forget()
-            self.priority_entry.pack_forget()
+            for entry in self.priority_entries:
+                entry.config(state="disabled")
 
         if self.algorithm.get() == "Round Robin":
             self.quantum_label.pack()
@@ -57,52 +87,47 @@ class CPUScheduler:
 
     def run_simulation(self):
         try:
-            burst_times = list(map(int, self.burst_entry.get().split()))
-            priorities = self.priority_entry.get().split()
-            priorities = list(map(int, priorities)) if priorities else [0] * len(burst_times)
-
-            if len(burst_times) != len(priorities) and self.algorithm.get() == "Priority":
-                raise ValueError("Burst times and priorities must have the same number of values!")
-
+            burst_times = [int(bt.get()) for bt in self.burst_entries]
+            arrival_times = [int(at.get()) for at in self.arrival_entries]
+            priorities = [int(pr.get()) if self.algorithm.get() == "Priority" else 0 for pr in self.priority_entries]
+            
             if self.algorithm.get() == "Round Robin":
                 quantum = int(self.quantum_entry.get())
-                if quantum <= 0:
-                    raise ValueError("Time quantum must be a positive integer.")
-
+            
             if self.algorithm.get() == "FCFS":
-                self.fcfs(burst_times)
+                self.fcfs(arrival_times, burst_times)
             elif self.algorithm.get() == "SJF":
-                self.sjf(burst_times)
+                self.sjf(arrival_times, burst_times)
             elif self.algorithm.get() == "Priority":
-                self.priority_scheduling(burst_times, priorities)
+                self.priority_scheduling(arrival_times, burst_times, priorities)
             elif self.algorithm.get() == "Round Robin":
-                self.round_robin(burst_times, quantum)
-
+                self.round_robin(arrival_times, burst_times, quantum)
         except ValueError as e:
             messagebox.showerror("Error", str(e))
 
-    def fcfs(self, burst_times):
-        waiting_time, turnaround_time, start_time, end_time = self.calculate_times(burst_times)
-        self.display_output(burst_times, waiting_time, turnaround_time)
-        self.plot_gantt_chart(start_time, end_time, len(burst_times))
+    def fcfs(self, arrival_times, burst_times):
+        processes = sorted(zip(arrival_times, burst_times), key=lambda x: x[0])
+        sorted_at, sorted_bt = zip(*processes)
+        self.calculate_and_display(sorted_at, sorted_bt)
 
-    def sjf(self, burst_times):
-        sorted_burst = sorted(burst_times)
-        self.fcfs(sorted_burst)
+    def sjf(self, arrival_times, burst_times):
+        processes = sorted(zip(arrival_times, burst_times), key=lambda x: x[1])
+        sorted_at, sorted_bt = zip(*processes)
+        self.calculate_and_display(sorted_at, sorted_bt)
 
-    def priority_scheduling(self, burst_times, priorities):
-        processes = sorted(zip(priorities, burst_times), key=lambda x: x[0])
-        sorted_burst = [p[1] for p in processes]
-        self.fcfs(sorted_burst)
+    def priority_scheduling(self, arrival_times, burst_times, priorities):
+        processes = sorted(zip(priorities, arrival_times, burst_times), key=lambda x: x[0])
+        _, sorted_at, sorted_bt = zip(*processes)
+        self.calculate_and_display(sorted_at, sorted_bt)
 
-    def round_robin(self, burst_times, quantum):
+    def round_robin(self, arrival_times, burst_times, quantum):
         n = len(burst_times)
         remaining = burst_times[:]
         waiting_time = [0] * n
         turnaround_time = [0] * n
         current_time = 0
         start_time, end_time, process_order = [], [], []
-
+        
         while any(remaining):
             for i in range(n):
                 if remaining[i] > 0:
@@ -116,41 +141,64 @@ class CPUScheduler:
                         turnaround_time[i] = current_time
                     end_time.append(current_time)
                     process_order.append(f"P{i+1}")
-
-        self.display_output(burst_times, waiting_time, turnaround_time)
+        
         self.plot_gantt_chart(start_time, end_time, n, process_order)
+        self.calculate_and_display(arrival_times, burst_times)
 
-    def calculate_times(self, burst_times):
+    def calculate_and_display(self, arrival_times, burst_times):
         n = len(burst_times)
         waiting_time = [0] * n
         turnaround_time = [0] * n
+        completion_time = [0] * n
         start_time = [0] * n
         end_time = [0] * n
-
+        
+        completion_time[0] = arrival_times[0] + burst_times[0]
         for i in range(1, n):
-            waiting_time[i] = burst_times[i-1] + waiting_time[i-1]
+            completion_time[i] = max(completion_time[i-1], arrival_times[i]) + burst_times[i]
+        
         for i in range(n):
-            turnaround_time[i] = burst_times[i] + waiting_time[i]
-            start_time[i] = waiting_time[i]
-            end_time[i] = turnaround_time[i]
+            turnaround_time[i] = completion_time[i] - arrival_times[i]
+            waiting_time[i] = turnaround_time[i] - burst_times[i]
+            start_time[i] = waiting_time[i] + arrival_times[i]
+            end_time[i] = completion_time[i]
+        
+        avg_wt = sum(waiting_time) / n
+        avg_tat = sum(turnaround_time) / n
+        
+        self.display_results_table(arrival_times, burst_times, waiting_time, turnaround_time, avg_wt, avg_tat)
+        self.plot_gantt_chart(start_time, end_time, n)
+        
+        messagebox.showinfo("Results", f"Avg Waiting Time: {avg_wt:.2f}\nAvg Turnaround Time: {avg_tat:.2f}")
 
-        return waiting_time, turnaround_time, start_time, end_time
-
-    def display_output(self, burst_times, waiting_time, turnaround_time):
-        output = "Process\tBurst Time\tWaiting Time\tTurnaround Time\n"
-        for i in range(len(burst_times)):
-            output += f"{i+1}\t{burst_times[i]}\t\t{waiting_time[i]}\t\t{turnaround_time[i]}\n"
-        self.output_text.delete(1.0, tk.END)
-        self.output_text.insert(tk.END, output)
+    def display_results_table(self, arrival_times, burst_times, waiting_time, turnaround_time, avg_wt, avg_tat):
+        for widget in self.result_frame.winfo_children():
+            widget.destroy()
+        
+        table = ttk.Treeview(self.result_frame, columns=("Process", "Arrival Time", "Burst Time", "Waiting Time", "Turnaround Time"), show="headings")
+        table.pack(padx=10, pady=10)
+        
+        table.heading("Process", text="Process")
+        table.heading("Arrival Time", text="Arrival Time")
+        table.heading("Burst Time", text="Burst Time")
+        table.heading("Waiting Time", text="Waiting Time")
+        table.heading("Turnaround Time", text="Turnaround Time")
+        
+        for i in range(len(arrival_times)):
+            table.insert("", "end", values=(f"P{i+1}", arrival_times[i], burst_times[i], waiting_time[i], turnaround_time[i]))
+        
+        avg_label = tk.Label(self.result_frame, text=f"Avg Waiting Time: {avg_wt:.2f}\nAvg Turnaround Time: {avg_tat:.2f}", fg="white", bg="#2c3e50")
+        avg_label.pack(pady=5)
 
     def plot_gantt_chart(self, start, end, n, process_order=None):
-        fig, ax = plt.subplots()
+        colors = plt.cm.tab10(np.linspace(0, 1, n))
+        fig, ax = plt.subplots(figsize=(10, 5))
+        
         for i in range(n):
-            ax.barh("Processes", end[i] - start[i], left=start[i], color="blue", edgecolor="black")
-            ax.text(start[i] + (end[i] - start[i]) / 2, 0, f"P{i+1}", ha='center', va='center', color='white', fontsize=12, fontweight='bold')
-
+            ax.barh(process_order[i] if process_order else f"P{i+1}", end[i] - start[i], left=start[i], color=colors[i], edgecolor="black")
+            ax.text(start[i] + (end[i] - start[i]) / 2, i, f"P{i+1}", ha='center', va='center', color='white', fontsize=12, fontweight='bold')
+        
         ax.set_xlabel("Time")
-        ax.set_title("Gantt Chart for CPU Scheduling")
         plt.show()
 
 root = tk.Tk()
