@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 import matplotlib.pyplot as plt
 import numpy as np
+from collections import deque
 
 class CPUScheduler:
     def __init__(self, root):
@@ -44,16 +45,20 @@ class CPUScheduler:
             if self.num_processes <= 0:
                 raise ValueError("Number of processes must be positive.")
 
-            tk.Label(self.process_frame, text="Arrival Time", fg="white", bg="#2c3e50").grid(row=0, column=1, padx=10)
-            tk.Label(self.process_frame, text="Burst Time", fg="white", bg="#2c3e50").grid(row=0, column=2, padx=10)
-            tk.Label(self.process_frame, text="Priority", fg="white", bg="#2c3e50").grid(row=0, column=3, padx=10)
+            headers = ["Process", "Arrival Time", "Burst Time", "Priority"]
+            for i, header in enumerate(headers):
+                tk.Label(self.process_frame, text=header, fg="white", bg="#2c3e50").grid(row=0, column=i, padx=10)
 
+            self.process_names = []
             self.arrival_entries = []
             self.burst_entries = []
             self.priority_entries = []
 
             for i in range(self.num_processes):
-                tk.Label(self.process_frame, text=f"P{i+1}", fg="white", bg="#2c3e50").grid(row=i+1, column=0)
+                process_name = f"P{i+1}"
+                self.process_names.append(process_name)
+
+                tk.Label(self.process_frame, text=process_name, fg="white", bg="#2c3e50").grid(row=i+1, column=0)
                 at_entry = tk.Entry(self.process_frame, width=10)
                 bt_entry = tk.Entry(self.process_frame, width=10)
                 pr_entry = tk.Entry(self.process_frame, width=10)
@@ -91,118 +96,244 @@ class CPUScheduler:
             arrival_times = [int(at.get()) for at in self.arrival_entries]
             priorities = [int(pr.get()) if self.algorithm.get() == "Priority" else 0 for pr in self.priority_entries]
 
+            process_data = list(zip(self.process_names, arrival_times, burst_times, priorities))
+
             if self.algorithm.get() == "Round Robin":
                 quantum = int(self.quantum_entry.get())
+                if quantum <= 0:
+                    raise ValueError("Time quantum must be positive.")
 
             if self.algorithm.get() == "FCFS":
-                self.fcfs(arrival_times, burst_times)
+                self.fcfs(process_data)
             elif self.algorithm.get() == "SJF":
-                self.sjf(arrival_times, burst_times)
+                self.sjf(process_data)
             elif self.algorithm.get() == "Priority":
-                self.priority_scheduling(arrival_times, burst_times, priorities)
+                self.priority_scheduling(process_data)
             elif self.algorithm.get() == "Round Robin":
-                self.round_robin(arrival_times, burst_times, quantum)
+                self.round_robin(process_data, quantum)
 
         except ValueError as e:
             messagebox.showerror("Error", str(e))
 
-    def fcfs(self, arrival_times, burst_times):
-        processes = sorted(zip(arrival_times, burst_times), key=lambda x: x[0])
-        sorted_at, sorted_bt = zip(*processes)
-        self.calculate_and_display(sorted_at, sorted_bt)
+    def fcfs(self, process_data):
+        sorted_processes = sorted(process_data, key=lambda x: x[1])
+        self.calculate_and_display(sorted_processes)
 
-    def sjf(self, arrival_times, burst_times):
-        processes = sorted(zip(arrival_times, burst_times), key=lambda x: x[1])
-        sorted_at, sorted_bt = zip(*processes)
-        self.calculate_and_display(sorted_at, sorted_bt)
-
-    def priority_scheduling(self, arrival_times, burst_times, priorities):
-        processes = sorted(zip(priorities, arrival_times, burst_times), key=lambda x: x[0])
-        _, sorted_at, sorted_bt = zip(*processes)
-        self.calculate_and_display(sorted_at, sorted_bt)
-
-    def round_robin(self, arrival_times, burst_times, quantum):
-        n = len(burst_times)
-        remaining = burst_times[:]
+    def sjf(self, process_data):
+        process_data.sort(key=lambda x: (x[1], x[2]))  # Sort by arrival time and burst time
+        n = len(process_data)
+        remaining_time = [p[2] for p in process_data]
+        completion_time = [0] * n
         waiting_time = [0] * n
         turnaround_time = [0] * n
-        current_time = 0
-        start_time, end_time, process_order = [], [], []
+        ready_queue = []
+        time = 0
+        completed = 0
 
-        while any(remaining):
+        while completed < n:
+            # Add processes to ready queue based on their arrival time
             for i in range(n):
-                if remaining[i] > 0:
-                    start_time.append(current_time)
-                    if remaining[i] > quantum:
-                        remaining[i] -= quantum
-                        current_time += quantum
-                    else:
-                        current_time += remaining[i]
-                        remaining[i] = 0
-                        turnaround_time[i] = current_time
-                    end_time.append(current_time)
-                    process_order.append(f"P{i+1}")
+                if process_data[i][1] <= time and remaining_time[i] > 0 and i not in ready_queue:
+                    ready_queue.append(i)
 
-        self.plot_gantt_chart(start_time, end_time, n, process_order)
-        self.calculate_and_display(arrival_times, burst_times, waiting_time, turnaround_time)
+            if not ready_queue:
+                time += 1
+                continue
 
-    def calculate_and_display(self, arrival_times, burst_times, waiting_time=None, turnaround_time=None):
-        n = len(burst_times)
-        if waiting_time is None and turnaround_time is None:
-            waiting_time = [0] * n
-            turnaround_time = [0] * n
-            completion_time = [0] * n
-            start_time = [0] * n
-            end_time = [0] * n
+            # Sort the ready queue by remaining time (SJF)
+            ready_queue.sort(key=lambda i: remaining_time[i])
+            index = ready_queue.pop(0)
 
-            completion_time[0] = arrival_times[0] + burst_times[0]
-            for i in range(1, n):
-                completion_time[i] = max(completion_time[i-1], arrival_times[i]) + burst_times[i]
+            # Execute the selected process
+            time += remaining_time[index]
+            remaining_time[index] = 0
+            completion_time[index] = time
+            turnaround_time[index] = completion_time[index] - process_data[index][1]
+            waiting_time[index] = turnaround_time[index] - process_data[index][2]
+            completed += 1
 
+        # Calculate averages
+        avg_wt = sum(waiting_time) / n
+        avg_tat = sum(turnaround_time) / n
+        
+        # Sorting processes back by their original order
+        sorted_by_process = sorted(zip(process_data, completion_time, turnaround_time, waiting_time), key=lambda x: int(x[0][0][1:]))
+        sorted_processes, completion_time, turnaround_time, waiting_time = zip(*sorted_by_process)
+        
+        self.display_table(sorted_processes, completion_time, waiting_time, turnaround_time)
+        self.plot_gantt_chart([ct - bt for ct, bt in zip(completion_time, [p[2] for p in sorted_processes])], 
+                            completion_time, n, sorted_processes)
+        
+        messagebox.showinfo("Results", f"Avg Waiting Time: {avg_wt:.2f}\nAvg Turnaround Time: {avg_tat:.2f}")
+
+    def priority_scheduling(self, process_data):
+        # Sort by priority (lower number = higher priority), then by arrival time
+        process_data.sort(key=lambda x: (x[3], x[1]))
+        
+        n = len(process_data)
+        remaining_time = [p[2] for p in process_data]
+        arrival_time = [p[1] for p in process_data]
+        completion_time = [0] * n
+        waiting_time = [0] * n
+        turnaround_time = [0] * n
+        time = 0
+        
+        while True:
+            # Find the highest priority process that has arrived and has remaining time
+            selected = None
             for i in range(n):
-                turnaround_time[i] = completion_time[i] - arrival_times[i]
-                waiting_time[i] = turnaround_time[i] - burst_times[i]
-                start_time[i] = waiting_time[i] + arrival_times[i]
-                end_time[i] = completion_time[i]
+                if arrival_time[i] <= time and remaining_time[i] > 0:
+                    if selected is None or process_data[i][3] < process_data[selected][3]:
+                        selected = i
+            
+            if selected is None:
+                # No process available, advance time
+                time += 1
+                continue
+            
+            # Execute the selected process to completion (non-preemptive)
+            time += remaining_time[selected]
+            completion_time[selected] = time
+            remaining_time[selected] = 0
+            turnaround_time[selected] = completion_time[selected] - arrival_time[selected]
+            waiting_time[selected] = turnaround_time[selected] - process_data[selected][2]
+            
+            # Check if all processes are completed
+            if all(rt == 0 for rt in remaining_time):
+                break
+        
+        # Calculate averages
+        avg_wt = sum(waiting_time) / n
+        avg_tat = sum(turnaround_time) / n
+        
+        # Sorting processes back by their original order
+        sorted_by_process = sorted(zip(process_data, completion_time, turnaround_time, waiting_time), 
+                                 key=lambda x: int(x[0][0][1:]))
+        sorted_processes, completion_time, turnaround_time, waiting_time = zip(*sorted_by_process)
+        
+        self.display_table(sorted_processes, completion_time, waiting_time, turnaround_time)
+        self.plot_gantt_chart([ct - bt for ct, bt in zip(completion_time, [p[2] for p in sorted_processes])], 
+                             completion_time, n, sorted_processes)
+        
+        messagebox.showinfo("Results", f"Avg Waiting Time: {avg_wt:.2f}\nAvg Turnaround Time: {avg_tat:.2f}")
+
+    def round_robin(self, process_data, quantum):
+        n = len(process_data)
+        remaining_time = [p[2] for p in process_data]
+        arrival_time = [p[1] for p in process_data]
+        completion_time = [0] * n
+        waiting_time = [0] * n
+        turnaround_time = [0] * n
+        ready_queue = deque()
+        time = 0
+        completed = 0
+        
+        # Initialize ready queue with processes that have arrived at time 0
+        for i in range(n):
+            if arrival_time[i] == 0:
+                ready_queue.append(i)
+        
+        # To track when each process was last added to the queue
+        last_added = [-1] * n
+        
+        while completed < n:
+            if not ready_queue:
+                time += 1
+                # Check for new arrivals
+                for i in range(n):
+                    if arrival_time[i] == time and remaining_time[i] > 0 and i not in ready_queue and last_added[i] != time:
+                        ready_queue.append(i)
+                        last_added[i] = time
+                continue
+            
+            current_process = ready_queue.popleft()
+            
+            # Execute the process for quantum or remaining time, whichever is smaller
+            exec_time = min(quantum, remaining_time[current_process])
+            time += exec_time
+            remaining_time[current_process] -= exec_time
+            
+            # Check for new arrivals during this execution
+            for i in range(n):
+                if arrival_time[i] <= time and remaining_time[i] > 0 and i not in ready_queue and i != current_process and last_added[i] != time:
+                    ready_queue.append(i)
+                    last_added[i] = time
+            
+            if remaining_time[current_process] == 0:
+                completion_time[current_process] = time
+                turnaround_time[current_process] = completion_time[current_process] - arrival_time[current_process]
+                waiting_time[current_process] = turnaround_time[current_process] - process_data[current_process][2]
+                completed += 1
+            else:
+                ready_queue.append(current_process)
+        
+        # Calculate averages
+        avg_wt = sum(waiting_time) / n
+        avg_tat = sum(turnaround_time) / n
+        
+        # Sorting processes back by their original order
+        sorted_by_process = sorted(zip(process_data, completion_time, turnaround_time, waiting_time), key=lambda x: int(x[0][0][1:]))
+        sorted_processes, completion_time, turnaround_time, waiting_time = zip(*sorted_by_process)
+        
+        self.display_table(sorted_processes, completion_time, waiting_time, turnaround_time)
+        
+        # For RR, we'll show a simplified Gantt chart (more complex to show all context switches)
+        self.plot_gantt_chart([ct - bt for ct, bt in zip(completion_time, [p[2] for p in sorted_processes])], 
+                            completion_time, n, sorted_processes)
+        
+        messagebox.showinfo("Results", f"Avg Waiting Time: {avg_wt:.2f}\nAvg Turnaround Time: {avg_tat:.2f}")
+
+    def calculate_and_display(self, sorted_processes):
+        n = len(sorted_processes)
+        waiting_time = [0] * n
+        turnaround_time = [0] * n
+        completion_time = [0] * n
+        start_time = [0] * n
+        end_time = [0] * n
+
+        completion_time[0] = sorted_processes[0][1] + sorted_processes[0][2]
+        for i in range(1, n):
+            completion_time[i] = max(completion_time[i-1], sorted_processes[i][1]) + sorted_processes[i][2]
+
+        for i in range(n):
+            turnaround_time[i] = completion_time[i] - sorted_processes[i][1]
+            waiting_time[i] = turnaround_time[i] - sorted_processes[i][2]
+            start_time[i] = waiting_time[i] + sorted_processes[i][1]
+            end_time[i] = completion_time[i]
 
         avg_wt = sum(waiting_time) / n
         avg_tat = sum(turnaround_time) / n
 
-        self.plot_gantt_chart(start_time, end_time, n)
-
-        self.display_table(arrival_times, burst_times, waiting_time, turnaround_time)
+        self.plot_gantt_chart(start_time, end_time, n, sorted_processes)
+        self.display_table(sorted_processes, completion_time, waiting_time, turnaround_time)
 
         messagebox.showinfo("Results", f"Avg Waiting Time: {avg_wt:.2f}\nAvg Turnaround Time: {avg_tat:.2f}")
 
-    def display_table(self, arrival_times, burst_times, waiting_time, turnaround_time):
+    def display_table(self, sorted_processes, completion_time, waiting_time, turnaround_time):
         for widget in self.result_frame.winfo_children():
             widget.destroy()
 
-        headers = ["Process", "Arrival Time", "Burst Time", "Waiting Time", "Turnaround Time"]
+        headers = ["Process", "Arrival Time", "Burst Time", "Completion Time", "Turnaround Time", "Waiting Time"]
         table = ttk.Treeview(self.result_frame, columns=headers, show="headings", height=8)
 
         for header in headers:
             table.heading(header, text=header)
             table.column(header, width=100, anchor="center")
 
-        for i in range(len(arrival_times)):
-            table.insert("", "end", values=(f"P{i+1}", arrival_times[i], burst_times[i], waiting_time[i], turnaround_time[i]))
+        for i, process in enumerate(sorted_processes):
+            table.insert("", "end", values=(process[0], process[1], process[2], completion_time[i], turnaround_time[i], waiting_time[i]))
 
         table.pack()
 
-    def plot_gantt_chart(self, start, end, n, process_order=None):
+    def plot_gantt_chart(self, start, end, n, sorted_processes):
         colors = plt.cm.tab10(np.linspace(0, 1, n))
-        fig, ax = plt.subplots(figsize=(10, 2))  # Set a smaller figure height for a single line Gantt chart
+        fig, ax = plt.subplots(figsize=(10, 2))
 
-        # Create a horizontal bar for each process on the same line
         for i in range(n):
-            ax.barh(0, end[i] - start[i], left=start[i], color=colors[i], edgecolor="black", height=0.8)  # height adjusted to fit all processes
+            ax.barh(0, end[i] - start[i], left=start[i], color=colors[i], edgecolor="black", height=0.8)
+            ax.text(start[i] + (end[i] - start[i]) / 2, 0, sorted_processes[i][0], ha='center', va='center', color='white', fontsize=12, fontweight='bold')
 
-            # Label each process at the center of its corresponding bar
-            ax.text(start[i] + (end[i] - start[i]) / 2, 0, f"P{i+1}", ha='center', va='center', color='white', fontsize=12, fontweight='bold')
-
-        ax.set_yticks([0])  # Only one line, so set the y-tick to zero
-        ax.set_yticklabels(["Processes"])  # Label that all processes are on the same line
+        ax.set_yticks([0])
         ax.set_xlabel("Time")
         ax.set_title("Gantt Chart")
         plt.tight_layout()
